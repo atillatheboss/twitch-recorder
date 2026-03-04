@@ -2,7 +2,7 @@
 
 Record Twitch streams automatically with a modern web interface. Built with Node.js, FFmpeg, and Docker.
 
-**[Features](#-features) • [Requirements](#-requirements) • [Quick Start](#-quick-start) • [Troubleshooting](#-troubleshooting)**
+**[Features](#-features) • [Requirements](#-requirements) • [Quick Start](#-quick-start-with-docker-(easiest)) • [Troubleshooting](#-troubleshooting)**
 
 ---
 
