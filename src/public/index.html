@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Twitch Recorder</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+  <style>
+    * { transition: background-color 0.2s, border-color 0.2s, color 0.2s; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
+    input[type="range"] { accent-color: rgb(168, 85, 247); }
+    
+    .card { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); transition: transform 0.3s, box-shadow 0.3s; }
+    .card:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(168, 85, 247, 0.1); }
+    
+    button { transition: all 0.3s ease; position: relative; overflow: hidden; }
+    button:active { transform: scale(0.98); }
+    
+    input[type="text"], input[type="number"], input[type="datetime-local"], select {
+      transition: all 0.3s ease;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, input[type="datetime-local"]:focus, select:focus {
+      transform: translateY(-1px);
+      box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2);
+    }
+    
+    @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+    .animate-slide-in { animation: slideIn 0.3s ease-out; }
+    .animate-pulse-custom { animation: pulse 2s infinite; }
+    
+    .badge { animation: slideIn 0.3s ease-out; }
+    .status-running { text-shadow: 0 0 10px rgba(34, 197, 94, 0.5); }
+    .status-scheduled { text-shadow: 0 0 10px rgba(234, 179, 8, 0.5); }
+    
+    .input-group { position: relative; }
+    .input-group label { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; color: rgb(156, 163, 175); margin-bottom: 0.5rem; display: block; }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white min-h-screen py-8 px-4">
+
+  <!-- allow full browser width for content -->
+  <!-- main container limited to ~90% width with margins -->
+  <div class="w-11/12 lg:w-10/12 xl:w-9/12 mx-auto">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-8">
+      <div>
+        <h1 class="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent">Twitch Stream Recorder</h1>
+        <p class="text-gray-400 text-sm mt-1">Professional stream recording made simple</p>
+      </div>
+      <div class="flex gap-3">
+        <select id="languageSelect" onchange="changeLanguage(this.value)" class="px-4 py-2 rounded-lg bg-gray-800 text-white border border-gray-700 hover:border-gray-600 transition cursor-pointer">
+          <option value="de">Deutsch</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full">
+      <!-- Main Controls -->
+      <div class="lg:col-span-2">
+        <div class="w-full bg-gradient-to-br from-gray-800 to-gray-850 border border-gray-700 rounded-2xl p-8 space-y-6 shadow-2xl card">
+          <div class="input-group">
+            <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3" data-i18n="channel-label">🎙️ Twitch Kanal</label>
+            <input id="username" placeholder="Username" data-i18n="username-placeholder" class="w-full px-5 py-3 rounded-xl bg-gray-700 border border-gray-600 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-30 transition" />
+          </div>
+
+          <div class="input-group">
+            <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3" data-i18n="starttime">⏰ Startzeit</label>
+            <select id="startOption" class="w-full px-5 py-3 rounded-xl bg-gray-700 border border-gray-600 text-white focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-30 transition cursor-pointer" onchange="onStartOptionChange()">
+              <option value="now" data-i18n="now">Jetzt</option>
+              <option value="5m" data-i18n="in5m">In 5 Minuten</option>
+              <option value="15m" data-i18n="in15m">In 15 Minuten</option>
+              <option value="1h" data-i18n="in1h">In 1 Stunde</option>
+              <option value="custom" data-i18n="custom">Benutzerdefiniert...</option>
+            </select>
+
+            <div id="startTimeContainer" class="hidden mt-4">
+              <input id="startTime" type="datetime-local" class="w-full px-5 py-3 rounded-xl bg-gray-700 border border-gray-600 text-white focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-30 transition" disabled />
+            </div>
+          </div>
+
+          <div class="input-group">
+            <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4" data-i18n="duration">⏱️ Aufzeichnungsdauer</label>
+            <div id="durationContainer" class="space-y-4">
+              <input id="durationSlider" type="range" min="60" max="86400" step="60" value="3600" class="w-full h-3 cursor-pointer rounded-lg" />
+              <div class="flex justify-between items-center gap-4">
+                <span class="text-sm text-gray-400"><span data-i18n="duration-label">Dauer:</span> <strong class="text-white text-lg" id="durationDisplay">60m</strong></span>
+                <input id="duration" type="number" placeholder="Sekunden" data-i18n="seconds-placeholder" class="w-32 px-4 py-2 rounded-lg bg-gray-700 border border-gray-600 text-white text-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-30 transition" />
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-gradient-to-r from-purple-900 to-purple-800 bg-opacity-40 border border-purple-600 border-opacity-50 rounded-xl p-5">
+            <label class="flex items-center gap-3 cursor-pointer">
+              <input id="useEndTime" type="checkbox" class="w-5 h-5 cursor-pointer accent-purple-400" />
+              <span class="text-sm text-gray-200 font-medium" data-i18n="useendtime">Endzeit verwenden (Berlin)</span>
+            </label>
+
+            <div id="endTimeContainer" class="hidden mt-4">
+              <input id="endTime" type="datetime-local" class="w-full px-5 py-3 rounded-xl bg-gray-600 border border-gray-500 text-white focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-opacity-30 transition" disabled />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4 pt-2">
+            <button onclick="start()" class="bg-gradient-to-r from-green-500 via-green-600 to-green-600 hover:from-green-600 hover:via-green-700 hover:to-green-700 text-white font-bold py-4 px-6 rounded-xl transition transform hover:scale-105 shadow-lg hover:shadow-green-500/50 flex items-center justify-center gap-2"><span>▶</span> <span data-i18n="start">Start</span></button>
+            <button onclick="stop()" class="bg-gradient-to-r from-red-500 via-red-600 to-red-600 hover:from-red-600 hover:via-red-700 hover:to-red-700 text-white font-bold py-4 px-6 rounded-xl transition transform hover:scale-105 shadow-lg hover:shadow-red-500/50 flex items-center justify-center gap-2"><span>⏹</span> <span data-i18n="stop">Stop</span></button>
+          </div>
+
+          <div class="input-group">
+            <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3" data-i18n="stop-all-label">🛑 Alle Aufnahmen stoppen</label>
+            <select id="activeSelect" class="w-full px-5 py-3 rounded-xl bg-gray-700 border border-gray-600 text-white focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-30 transition cursor-pointer">
+              <option value="" data-i18n="stop-all">Alle stoppen</option>
+            </select>
+          </div>
+
+          <div class="bg-gradient-to-r from-purple-900 via-purple-800 to-purple-900 border border-purple-600 rounded-xl p-4 shadow-lg">
+            <p id="status" class="text-center text-sm text-gray-100 min-h-6 font-medium"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recordings Panel -->
+      <div class="lg:col-span-1">
+        <div class="w-full bg-gradient-to-br from-gray-800 to-gray-850 border border-gray-700 rounded-2xl p-8 shadow-2xl flex flex-col h-full card">
+          <h2 class="text-xl font-bold text-white mb-5 flex items-center gap-3" data-i18n="recordings"><span>📁</span> <span data-i18n="recordings">Aufnahmen</span></h2>
+          <ul id="recordingsList" class="w-full text-sm text-gray-300 max-h-90 overflow-y-auto space-y-3 flex-1 bg-gray-700 bg-opacity-20 rounded-xl p-4 border border-gray-700" style="scrollbar-width: thin;
+            -ms-overflow-style: auto;
+          "></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Video Player -->
+    <div class="mt-8">
+      <div class="bg-gradient-to-br from-gray-800 to-gray-850 border border-gray-700 rounded-2xl p-8 shadow-2xl card">
+        <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-3" data-i18n="preview-heading">🎬 Live Vorschau</h2>
+        <video id="preview" controls class="w-full bg-black rounded-xl shadow-lg" style="max-height:500px;">
+          Your browser does not support the video tag.
+        </video>
+      </div>
+    </div>
+
+    <!-- Active / Scheduled -->
+    <div class="mt-8">
+      <div class="bg-gradient-to-br from-gray-800 to-gray-850 border border-gray-700 rounded-2xl p-8 shadow-2xl card">
+        <div class="flex justify-between items-center mb-6">
+          <h2 class="text-xl font-bold text-white flex items-center gap-3" data-i18n="active-scheduled"><span>⏱️</span> Aktive / Geplante</h2>
+          <button onclick="refreshList()" class="text-xs px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-lg transition font-semibold shadow-lg" data-i18n="refresh">🔄 Aktualisieren</button>
+        </div>
+        <ul id="list" class="text-sm text-gray-300 space-y-3"></ul>
+      </div>
+    </div>
+
+    <!-- Hardware & Storage Monitoring -->
+    <div class="mt-8">
+      <div class="bg-gradient-to-br from-gray-800 to-gray-850 border border-gray-700 rounded-2xl p-8 shadow-2xl card">
+        <h2 class="text-xl font-bold text-white mb-8 flex items-center gap-3" data-i18n="resources-heading">📊 Systemressourcen</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <!-- CPU -->
+          <div class="bg-gray-700 bg-opacity-40 rounded-xl p-5 border border-gray-600 border-opacity-30">
+            <div class="flex justify-between items-center mb-4">
+              <span class="text-sm font-bold text-gray-200" data-i18n="cpu-label">🖥️ CPU</span>
+              <span class="text-lg font-bold text-white" id="cpuPercent">0%</span>
+            </div>
+            <div class="w-full bg-gray-600 bg-opacity-50 rounded-full h-3 overflow-hidden">
+              <div id="cpuBar" class="bg-gradient-to-r from-green-400 to-green-500 h-3 rounded-full transition-all shadow-lg shadow-green-500/20" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <!-- RAM -->
+          <div class="bg-gray-700 bg-opacity-40 rounded-xl p-5 border border-gray-600 border-opacity-30">
+            <div class="flex justify-between items-center mb-4">
+              <span class="text-sm font-bold text-gray-200" data-i18n="ram-label">💾 RAM</span>
+              <span class="text-lg font-bold text-white" id="ramPercent">0%</span>
+            </div>
+            <div class="w-full bg-gray-600 bg-opacity-50 rounded-full h-3 overflow-hidden">
+              <div id="ramBar" class="bg-gradient-to-r from-blue-400 to-blue-500 h-3 rounded-full transition-all shadow-lg shadow-blue-500/20" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <!-- Disk -->
+          <div class="bg-gray-700 bg-opacity-40 rounded-xl p-5 border border-gray-600 border-opacity-30">
+            <div class="flex justify-between items-center mb-4">
+              <span class="text-sm font-bold text-gray-200" data-i18n="disk-label">💿 Disk</span>
+              <span class="text-lg font-bold text-white" id="diskPercent">0%</span>
+            </div>
+            <div class="w-full bg-gray-600 bg-opacity-50 rounded-full h-3 overflow-hidden">
+              <div id="diskBar" class="bg-gradient-to-r from-indigo-400 to-indigo-500 h-3 rounded-full transition-all shadow-lg shadow-indigo-500/20" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <!-- Recordings Storage -->
+          <div class="bg-gray-700 bg-opacity-40 rounded-xl p-5 border border-gray-600 border-opacity-30">
+            <div class="flex justify-between items-center mb-4">
+              <span class="text-sm font-bold text-gray-200" data-i18n="recordings-label">📹 Aufnahmen</span>
+              <span class="text-lg font-bold text-white" id="recordingsPercent">0%</span>
+            </div>
+            <div class="w-full bg-gray-600 bg-opacity-50 rounded-full h-3 overflow-hidden">
+              <div id="recordingsBar" class="bg-gradient-to-r from-purple-400 to-purple-500 h-3 rounded-full transition-all shadow-lg shadow-purple-500/20" style="width: 0%"></div>
+            </div>
+            <div class="text-xs text-gray-400 mt-3 font-medium" id="recordingsSize">0 MB / 0 MB</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fehler-Modal -->
+  <div id="errorModal" class="fixed inset-0 hidden items-center justify-center bg-black bg-opacity-80 z-50 backdrop-blur-md animate-slide-in">
+    <div class="bg-gradient-to-br from-gray-800 to-gray-850 border border-red-500 border-opacity-50 rounded-2xl max-w-lg w-full mx-4 p-8 shadow-2xl shadow-red-500/20">
+      <h3 class="font-bold text-2xl text-white mb-4 flex items-center gap-3" data-i18n="error"><span>⚠️</span> <span data-i18n="error">Fehler</span></h3>
+      <p id="errorModalMsg" class="text-sm text-gray-200 mb-8 leading-relaxed"></p>
+      <div class="text-right">
+        <button onclick="hideModal()" class="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold px-8 py-3 rounded-lg transition shadow-lg" data-i18n="close"><span data-i18n="close">Schließen</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm Modal (custom styled) -->
+  <div id="confirmModal" class="fixed inset-0 hidden items-center justify-center bg-black bg-opacity-80 z-50 backdrop-blur-md animate-slide-in">
+    <div class="bg-gradient-to-br from-gray-800 to-gray-850 border border-yellow-500 border-opacity-50 rounded-2xl max-w-md w-full mx-4 p-8 shadow-2xl shadow-yellow-500/20">
+      <h3 id="confirmModalTitle" class="font-bold text-2xl text-white mb-4 flex items-center gap-3"><span>⚠️</span> <span data-i18n="confirm-title">Bestätigung</span></h3>
+      <p id="confirmModalMsg" class="text-sm text-gray-200 mb-8 leading-relaxed"></p>
+      <div class="flex justify-end gap-3">
+        <button id="confirmCancelBtn" class="bg-gray-700 hover:bg-gray-600 text-white font-semibold px-6 py-2 rounded-lg transition" data-i18n="cancel"><span data-i18n="cancel">Abbrechen</span></button>
+        <button id="confirmOkBtn" class="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold px-6 py-2 rounded-lg transition shadow-lg" data-i18n="confirm-ok"><span data-i18n="confirm-ok">Bestätigen</span></button>
+      </div>
+    </div>
+  </div>
+
+<script>
+// === INTERNATIONALIZATION ===
+const translations = {
+  de: {
+    starttime: "Startzeit (wähle Bereich)",
+    processing: "In Bearbeitung...",    
+    now: "Jetzt",
+    in5m: "In 5 Minuten",
+    in15m: "In 15 Minuten",
+    in1h: "In 1 Stunde",
+    custom: "Benutzerdefiniert...",
+    duration: "Dauer (Sekunden, optional)",
+    "duration-label": "Dauer:",
+    useendtime: "Endzeit verwenden (Berlin)",
+    endtime: "Endzeit (Berlin)",
+    start: "Start",
+    "stop-all": "Alle stoppen",
+    stop: "Stop",
+    recordings: "Aufnahmen",
+    "active-scheduled": "Aktive / Geplante",
+    refresh: "Aktualisieren",
+    error: "Fehler",
+    close: "Schließen",
+    "no-recordings": "Keine Aufnahmen vorhanden.",
+    preview: "Vorschau",
+    delete: "Löschen",
+    "delete-confirm": "Aufnahme",
+    "delete-confirm2": "wirklich löschen?",
+    "confirm": "OK",
+    "confirm-title": "Bestätigung",
+    "deleted": "Gelöscht:",
+    "delete-error": "Fehler beim Löschen",
+    "cancel": "Abbrechen",
+    "cancel-job": "Geplanten Job",
+    "really-cancel": "wirklich abbrechen?",
+    "job-cancelled": "Geplantes",
+    "cancelled": "abgebrochen",
+    "cancel-error": "Fehler beim Abbrechen",
+    "network-error": "Netzwerkfehler",
+    "recording-started": "Recording gestartet id",
+    "scheduled-recording": "Geplantes Recording:",
+    "stop-request": "Stop-Anfrage:",
+    "stop-all-msg": "alle Recordings",
+    "stop-sent": "Stop-Anfrage für id",
+    "stop-error": "Fehler beim Stop",
+    "custom-time-required": "Bitte ein Datum/Uhrzeit bei 'Benutzerdefiniert' wählen.",
+    "invalid-response": "Ungültige Antwort",
+    "select-time": "Bitte ein Datum/Uhrzeit bei 'Benutzerdefiniert' wählen.",
+    "running": "läuft",
+    "scheduled": "geplant",
+    file: "Datei",
+    size: "Größe",
+    kb: "KB",
+    "channel-label": "🎙️ Twitch Kanal",
+    "username-placeholder": "Benutzername",
+    "seconds-placeholder": "Sekunden",
+    "stop-all-label": "🛑 Alle Aufnahmen stoppen",
+    "preview-heading": "🎬 Live Vorschau",
+    "resources-heading": "📊 Systemressourcen",
+    "cpu-label": "🖥️ CPU",
+    "ram-label": "💾 RAM",
+    "disk-label": "💿 Disk",
+    "recordings-label": "📹 Aufnahmen",
+    "confirm-ok": "Bestätigen",
+    "live": "LIVE"
+  },
+  en: {
+    starttime: "Start time (select range)",
+    processing: "Processing...",    
+    now: "Now",
+    in5m: "In 5 minutes",
+    in15m: "In 15 minutes",
+    in1h: "In 1 hour",
+    custom: "Custom...",
+    duration: "Duration (seconds, optional)",
+    "duration-label": "Duration:",
+    useendtime: "Use end time (Berlin)",
+    endtime: "End time (Berlin)",
+    start: "Start",
+    "stop-all": "Stop all",
+    stop: "Stop",
+    recordings: "Recordings",
+    "active-scheduled": "Active / Scheduled",
+    refresh: "Refresh",
+    error: "Error",
+    close: "Close",
+    "no-recordings": "No recordings available.",
+    preview: "Preview",
+    delete: "Delete",
+    "delete-confirm": "Recording",
+    "delete-confirm2": "really delete?",
+    "confirm": "Confirm",
+    "confirm-title": "Confirm",
+    "deleted": "Deleted:",
+    "delete-error": "Error deleting file",
+    "cancel": "Cancel",
+    "cancel-job": "Scheduled job",
+    "really-cancel": "really cancel?",
+    "job-cancelled": "Scheduled",
+    "cancelled": "cancelled",
+    "cancel-error": "Error cancelling job",
+    "network-error": "Network error",
+    "recording-started": "Recording started id",
+    "scheduled-recording": "Scheduled recording:",
+    "stop-request": "Stop request:",
+    "stop-all-msg": "all recordings",
+    "stop-sent": "Stop request for id",
+    "stop-error": "Error stopping recording",
+    "custom-time-required": "Please select a date/time for custom option.",
+    "invalid-response": "Invalid response",
+    "select-time": "Please select a date/time for custom option.",
+    "running": "running",
+    "scheduled": "scheduled",
+    file: "File",
+    size: "Size",
+    kb: "KB",
+    "channel-label": "🎙️ Twitch Channel",
+    "username-placeholder": "Username",
+    "seconds-placeholder": "Seconds",
+    "stop-all-label": "🛑 Stop all recordings",
+    "preview-heading": "🎬 Live Preview",
+    "resources-heading": "📊 System Resources",
+    "cpu-label": "🖥️ CPU",
+    "ram-label": "💾 RAM",
+    "disk-label": "💿 Disk",
+    "recordings-label": "📹 Recordings",
+    "confirm-ok": "Confirm",
+    "live": "LIVE"
+  }
+};
+
+let currentLanguage = localStorage.getItem('lang') || 'de';
+
+function changeLanguage(lang) {
+  currentLanguage = lang;
+  localStorage.setItem('lang', lang);
+  document.documentElement.lang = lang;
+  updatePageTranslations();
+}
+
+function t(key) {
+  return translations[currentLanguage]?.[key] || translations['de'][key] || key;
+}
+
+function updatePageTranslations() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (el.tagName === 'OPTION') {
+      el.textContent = t(key);
+    } else if (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'number')) {
+      el.placeholder = t(key);
+    } else if (el.tagName === 'BUTTON') {
+      // Skip buttons - let inner spans handle translation
+      return;
+    } else {
+      el.textContent = t(key);
+    }
+  });
+  document.documentElement.lang = currentLanguage;
+}
+
+function formatBerlinToDateTimeLocal(d = new Date()) {
+  const berlin = d.toLocaleString('sv-SE', { timeZone: 'Europe/Berlin' });
+  return berlin.replace(' ', 'T').slice(0,16);
+}
+
+function onStartOptionChange() {
+  const opt = document.getElementById("startOption").value;
+  const dt = document.getElementById("startTime");
+  const container = document.getElementById("startTimeContainer");
+  const isCustom = opt === "custom";
+  dt.disabled = !isCustom;
+  if (!isCustom) {
+    dt.value = "";
+    if (container) container.classList.add('hidden');
+  } else {
+    dt.value = formatBerlinToDateTimeLocal(new Date());
+    dt.focus();
+    if (container) container.classList.remove('hidden');
+  }
+}
+
+function formatDurationSec(s) {
+  if (!s || s < 60) return `${s}s`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function getStatusColor(status) {
+  if (status === 'critical') return 'bg-red-500';
+  if (status === 'warning') return 'bg-yellow-500';
+  return 'bg-green-500';
+}
+
+async function updateStats() {
+  try {
+    const res = await fetch('/stats');
+    const stats = await res.json();
+
+    // CPU
+    const cpuPercent = stats.cpu.percent;
+    document.getElementById('cpuPercent').innerText = `${cpuPercent}%`;
+    document.getElementById('cpuBar').style.width = `${Math.min(cpuPercent, 100)}%`;
+    document.getElementById('cpuBar').className = `h-2 rounded-full ${getStatusColor(stats.cpu.status)}`;
+
+    // RAM
+    const ramPercent = stats.memory.percent;
+    document.getElementById('ramPercent').innerText = `${ramPercent}% (${stats.memory.used}/${stats.memory.total} MB)`;
+    document.getElementById('ramBar').style.width = `${Math.min(ramPercent, 100)}%`;
+    document.getElementById('ramBar').className = `h-2 rounded-full ${getStatusColor(stats.memory.status)}`;
+
+    // Disk
+    const diskPercent = stats.disk.percent;
+    document.getElementById('diskPercent').innerText = `${diskPercent}%`;
+    document.getElementById('diskBar').style.width = `${Math.min(diskPercent, 100)}%`;
+    document.getElementById('diskBar').className = `h-2 rounded-full ${getStatusColor(stats.disk.status)}`;
+
+    // Recordings
+    const recPercent = stats.recordings.percent;
+    document.getElementById('recordingsPercent').innerText = `${recPercent}%`;
+    document.getElementById('recordingsBar').style.width = `${Math.min(recPercent, 100)}%`;
+    document.getElementById('recordingsBar').className = `h-2 rounded-full ${getStatusColor(stats.recordings.status)}`;
+    document.getElementById('recordingsSize').innerText = `${stats.recordings.sizeMB} MB / ${stats.recordings.totalMB} MB`;
+
+    // Warnung anzeigen wenn Speicher voll
+    if (stats.recordings.status === 'critical') {
+      showModal(`⚠️ Speicher-Warnung: Aufnahmen belegen ${recPercent}% des verfügbaren Speicherplatzes (${stats.recordings.sizeMB}/${stats.recordings.totalMB} MB)`);
+    }
+  } catch (err) {
+    console.error('Error fetching stats:', err);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  updatePageTranslations();
+  document.getElementById('languageSelect').value = currentLanguage;
+
+  // Initiale Stats
+  updateStats();
+
+  // Poll Stats alle 5 Sekunden
+  setInterval(updateStats, 5000);
+
+  const slider = document.getElementById('durationSlider');
+  const display = document.getElementById('durationDisplay');
+  const num = document.getElementById('duration');
+  const useEnd = document.getElementById('useEndTime');
+  const endContainer = document.getElementById('endTimeContainer');
+  const endInput = document.getElementById('endTime');
+  const durContainer = document.getElementById('durationContainer');
+
+  function toggleEndUsage() {
+    const checked = !!useEnd.checked;
+    if (checked) {
+      durContainer.classList.add('hidden');
+      if (slider) slider.disabled = true;
+      if (num) num.disabled = true;
+      endContainer.classList.remove('hidden');
+      endInput.disabled = false;
+      endInput.focus();
+    } else {
+      durContainer.classList.remove('hidden');
+      if (slider) slider.disabled = false;
+      if (num) num.disabled = false;
+      endContainer.classList.add('hidden');
+      endInput.disabled = true;
+    }
+  }
+
+  if (slider && display && num) {
+    display.innerText = formatDurationSec(parseInt(slider.value));
+    num.value = slider.value;
+    slider.addEventListener('input', () => {
+      display.innerText = formatDurationSec(parseInt(slider.value));
+      num.value = slider.value;
+    });
+    num.addEventListener('change', () => {
+      let v = parseInt(num.value) || 0;
+      if (v < 60) v = 60;
+      if (v > 86400) v = 86400;
+      num.value = v;
+      slider.value = v;
+      display.innerText = formatDurationSec(v);
+    });
+  }
+
+  if (useEnd) {
+    useEnd.addEventListener('change', toggleEndUsage);
+    toggleEndUsage();
+  }
+  try { onStartOptionChange(); } catch (e) { /* ignore */ }
+});
+
+async function start() {
+  const username = document.getElementById("username").value;
+  const durationInput = parseInt(document.getElementById("duration").value) || undefined;
+  const startOption = document.getElementById("startOption").value;
+  const customTime = document.getElementById("startTime").value;
+  const endTime = document.getElementById("endTime").value;
+  const useEnd = document.getElementById("useEndTime").checked;
+
+  const body = { username, startOption };
+  if (startOption === "custom") {
+    if (!customTime) {
+      document.getElementById("status").innerText = t("select-time");
+      return;
+    }
+    body.startTime = customTime;
+  }
+
+  if (useEnd && endTime) {
+    body.endTime = endTime;
+  } else if (!useEnd && durationInput) {
+    body.duration = durationInput;
+  }
+
+  const res = await fetch("/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const data = await res.json().catch(()=>({ error: t("invalid-response") }));
+  if (!res.ok) {
+    showModal(data.error || t("error"));
+    await refreshAll();
+    return;
+  }
+  if (data.success && data.scheduled && data.jobId && data.jobTime) {
+    document.getElementById("status").innerText = `${t("scheduled-recording")} ${data.jobId} — ${data.jobTime}`;
+  } else {
+    document.getElementById("status").innerText = data.success ? (data.scheduled ? `${t("scheduled-recording")} ${data.jobId}` : `${t("recording-started")} ${data.id}`) : data.error;
+  }
+  await refreshAll();
+  // UX: clear and focus username so another name can be entered immediately
+  try { const u = document.getElementById('username'); if (u) { u.value = ''; u.focus(); } } catch(e) {}
+}
+
+function showModal(msg) {
+  const m = document.getElementById('errorModal');
+  const txt = document.getElementById('errorModalMsg');
+  if (txt) txt.innerText = msg || '';
+  if (m) m.classList.remove('hidden');
+  if (m) m.classList.add('flex');
+}
+
+function hideModal() {
+  const m = document.getElementById('errorModal');
+  if (m) { m.classList.remove('flex'); m.classList.add('hidden'); }
+}
+
+function showConfirm(message, title) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('confirmModal');
+    const msg = document.getElementById('confirmModalMsg');
+    const ttl = document.getElementById('confirmModalTitle');
+    const ok = document.getElementById('confirmOkBtn');
+    const cancel = document.getElementById('confirmCancelBtn');
+
+    if (ttl) ttl.textContent = title || t('confirm-title') || 'Confirm';
+    if (msg) msg.textContent = message || '';
+
+    function cleanup() {
+      modal.classList.remove('flex');
+      modal.classList.add('hidden');
+      ok.removeEventListener('click', onOk);
+      cancel.removeEventListener('click', onCancel);
+      document.removeEventListener('keydown', onKey);
+    }
+    function onOk() { cleanup(); resolve(true); }
+    function onCancel() { cleanup(); resolve(false); }
+    function onKey(e) { if (e.key === 'Escape') { onCancel(); } }
+
+    ok.addEventListener('click', onOk);
+    cancel.addEventListener('click', onCancel);
+    document.addEventListener('keydown', onKey);
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+  });
+}
+
+async function stop() {
+  const select = document.getElementById("activeSelect");
+  const selected = select.value;
+  const body = selected ? { id: selected } : {};
+  const res = await fetch("/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (res.ok) {
+    document.getElementById("status").innerText = selected ? `${t("stop-sent")} ${selected}` : `${t("stop-request")} ${t("stop-all-msg")}`;
+  } else {
+    const err = await res.json().catch(()=>({error: t("error")}));
+    document.getElementById("status").innerText = err.error || t("stop-error");
+  }
+  await refreshAll();
+}
+
+async function cancelScheduled(jobId) {
+  if (!(await showConfirm(`${t("cancel-job")} ${jobId} ${t("really-cancel")}?`, t('confirm-title')))) return;
+  try {
+    const res = await fetch('/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId })
+    });
+    if (res.ok) {
+      document.getElementById('status').innerText = `${t("job-cancelled")} ${jobId} ${t("cancelled")}`;
+    } else {
+      const err = await res.json().catch(()=>({ error: t("error") }));
+      document.getElementById('status').innerText = err.error || t("cancel-error");
+    }
+  } catch (err) {
+    document.getElementById('status').innerText = err.message || t("network-error");
+  }
+  await refreshAll();
+}
+
+let lastActiveScheduledDataHash = "";
+
+async function refreshList() {
+  const res = await fetch("/recordings");
+  const data = await res.json();
+  
+  // Compare with last data to avoid unnecessary re-rendering (prevents flickering)
+  const currentDataHash = JSON.stringify(data);
+  if (currentDataHash === lastActiveScheduledDataHash) {
+    return; // No changes, skip update
+  }
+  lastActiveScheduledDataHash = currentDataHash;
+  
+  const ul = document.getElementById("list");
+  ul.innerHTML = "";
+
+  const activeSelect = document.getElementById("activeSelect");
+  // preserve current selection so polling doesn't reset user's choice
+  const prevSelected = activeSelect ? activeSelect.value : "";
+  activeSelect.innerHTML = `<option value="">${t("stop-all")}</option>`;
+
+  if (Array.isArray(data.active)) {
+    data.active.forEach(a => {
+      const li = document.createElement("li");
+      li.className = 'bg-gradient-to-r from-green-700 to-green-600 bg-opacity-30 border border-green-500 border-opacity-50 p-3 rounded-lg animate-slide-in';
+      li.innerHTML = `<span class="font-bold text-green-300">●</span> <span class="font-bold text-green-300">${t("live")}</span> <span class="text-white font-semibold">${a.username}</span> <span class="text-xs text-gray-400">id:${a.id}</span>`;
+      ul.appendChild(li);
+
+      const opt = document.createElement("option");
+      opt.value = a.id;
+      opt.innerText = `${a.username} — ${a.id}`;
+      activeSelect.appendChild(opt);
+    });
+    // restore previous selection if still available
+    if (prevSelected) {
+      try { activeSelect.value = prevSelected; } catch(e) {}
+    }
+  }
+
+  if (Array.isArray(data.scheduled)) {
+    data.scheduled.forEach(s => {
+      const li = document.createElement("li");
+      li.className = 'bg-gradient-to-r from-yellow-700 to-yellow-600 bg-opacity-20 border border-yellow-500 border-opacity-40 p-4 rounded-lg animate-slide-in';
+
+      const row = document.createElement('div');
+      row.className = 'flex justify-between items-start gap-3';
+
+      const left = document.createElement('div');
+      left.className = 'truncate flex-1';
+      const title = document.createElement('div');
+      title.innerHTML = `<span class="font-bold text-white">${s.username}</span> <span class="text-xs text-gray-400 ml-2 font-medium">job:${s.jobId}</span>`;
+      const meta = document.createElement('div');
+      meta.className = 'text-xs text-gray-400 mt-2';
+      meta.innerText = `⏰ ${s.startTimeDisplay || s.startTime || '-'} • ⏱️ ${s.duration ? formatDurationSec(s.duration) : '-'}`;
+      left.appendChild(title);
+      left.appendChild(meta);
+
+      const rightControls = document.createElement('div');
+      rightControls.className = 'flex items-center gap-2 flex-shrink-0';
+
+      const isScheduled = s.status === 'scheduled' || s.hasTimerStart;
+      const isRunning = s.hasRecording || s.status === 'running';
+      if (isScheduled && !isRunning) {
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'text-xs text-red-300 hover:text-red-100 px-3 py-1 rounded-lg bg-red-900 bg-opacity-30 border border-red-500 border-opacity-50 hover:bg-red-900 hover:bg-opacity-50 transition font-semibold';
+        cancelBtn.title = t("cancel");
+        cancelBtn.innerText = '✖ ' + t("cancel");
+        cancelBtn.onclick = () => cancelScheduled(s.jobId);
+        rightControls.appendChild(cancelBtn);
+      }
+
+      const badge = document.createElement('div');
+      badge.className = 'text-xs px-3 py-1 rounded-lg whitespace-nowrap font-bold shadow-lg';
+      const status = s.status || (s.hasRecording ? 'running' : (s.hasTimerStart ? 'scheduled' : 'waiting'));
+      if (status === 'running') {
+        badge.className += ' bg-gradient-to-r from-green-500 to-green-600 text-white status-running';
+        badge.innerText = '● ' + t("running");
+      } else if (status === 'scheduled') {
+        badge.className += ' bg-gradient-to-r from-yellow-500 to-yellow-600 text-white status-scheduled';
+        badge.innerText = '⏰ ' + t("scheduled");
+      } else {
+        badge.className += ' bg-gray-600 text-white';
+        badge.innerText = status;
+      }
+
+      rightControls.appendChild(badge);
+
+      row.appendChild(left);
+      row.appendChild(rightControls);
+      li.appendChild(row);
+      ul.appendChild(li);
+    });
+  }
+}
+
+async function refreshRecordingsList() {
+  const res = await fetch("/recordings/all");
+  const data = await res.json();
+  const list = document.getElementById("recordingsList");
+  list.innerHTML = "";
+  if (!data.files || data.files.length === 0) {
+    const li = document.createElement("li");
+    li.className = "text-gray-400 text-center py-8 italic";
+    li.innerText = t("no-recordings");
+    list.appendChild(li);
+    return;
+  }
+  data.files.forEach(f => {
+    const li = document.createElement("li");
+    li.className = "mb-1 p-2 bg-gray-700 bg-opacity-40 border border-gray-600 border-opacity-50 rounded-lg hover:bg-opacity-60 transition flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 animate-slide-in";
+
+    const left = document.createElement("div");
+    left.className = "truncate flex-1 min-w-0";
+    const a = document.createElement("a");
+    // Prefer mp4 link for direct download/open; if not available show playlist
+    const fileLink = f.mp4Url || f.playlistUrl || (f.segments && f.segments.length ? `/files/${encodeURIComponent(f.segments[0])}` : '#');
+    a.href = fileLink;
+    const sizeKB = Math.round((f.size || 0) / 1024);
+    a.innerText = `📄 ${f.base}`;
+    a.target = "_blank";
+    a.className = "text-blue-300 hover:text-blue-100 underline font-medium transition truncate";
+    left.appendChild(a);
+    
+    const sizeSpan = document.createElement("div");
+    sizeSpan.className = "text-xs text-gray-400 mt-1";
+    sizeSpan.innerText = `${sizeKB} KB`;
+    left.appendChild(sizeSpan);
+
+    const controls = document.createElement("div");
+    controls.className = "flex items-center gap-2 flex-shrink-0 w-full sm:w-auto flex-wrap";
+
+
+    const previewBtn = document.createElement("button");
+    previewBtn.className = "text-xs bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 px-3 py-2 rounded-lg text-white transition font-semibold shadow-lg flex-shrink-0";
+
+    previewBtn.innerText = "👁 " + t("preview");
+    previewBtn.onclick = () => {
+      const preview = document.getElementById("preview");
+      // Decide whether to use HLS playlist or final MP4:
+      // Use playlist only when the group is active (recording still running) and a playlist exists.
+      const usePlaylist = !!(f.active && f.playlistUrl);
+      const playUrl = usePlaylist ? f.playlistUrl : (f.mp4Url || fileLink);
+      // Use HLS logic only when we intentionally play the playlist
+      if (usePlaylist) {
+        if (preview.canPlayType && preview.canPlayType('application/vnd.apple.mpegurl')) {
+          if (preview.src !== playUrl) {
+            if (window._hls) { try { window._hls.destroy(); } catch(_){} window._hls = null; window._hlsUrl = null; }
+            preview.src = playUrl;
+            preview.load();
+          }
+        } else if (window.Hls && Hls.isSupported()) {
+          if (!window._hls || window._hlsUrl !== playUrl) {
+            if (window._hls) { try { window._hls.destroy(); } catch(_){} window._hls = null; }
+            const hls = new Hls();
+            window._hls = hls;
+            window._hlsUrl = playUrl;
+            hls.attachMedia(preview);
+            hls.on(Hls.Events.MEDIA_ATTACHED, function() {
+              hls.loadSource(playUrl);
+            });
+          } else {
+            // same playlist already loaded; let hls.js handle segment updates
+          }
+        } else {
+          // fallback to mp4 if no HLS support
+          const mp4 = f.mp4Url || fileLink;
+          if (window._hls) { try { window._hls.destroy(); } catch(_){} window._hls = null; window._hlsUrl = null; }
+          if (preview.src !== mp4) { preview.src = mp4; preview.load(); }
+        }
+      } else {
+        // Play the finished MP4 (or fallback link). Destroy any hls instance.
+        if (window._hls) { try { window._hls.destroy(); } catch(_){} window._hls = null; window._hlsUrl = null; }
+        if (preview.src !== playUrl) { preview.src = playUrl; preview.load(); }
+      }
+      preview.scrollIntoView({ behavior: "smooth", block: "center" });
+    };
+    controls.appendChild(previewBtn);
+
+    // always show a download element; enable only when MP4 available
+    const downloadBtn = document.createElement("a");
+    if (f.mp4Url) {
+      downloadBtn.href = f.mp4Url;
+      downloadBtn.download = f.base + ".mp4";
+      downloadBtn.className = "text-xs bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 px-3 py-2 rounded-lg text-white transition font-semibold shadow-lg text-center flex-shrink-0";
+      downloadBtn.innerText = "📥 Download";
+    } else {
+      // placeholder while mp4 is not yet present
+      downloadBtn.href = "#";
+      downloadBtn.className = "text-xs bg-gray-600 bg-opacity-50 px-3 py-2 rounded-lg text-gray-400 transition font-semibold shadow-lg cursor-not-allowed flex-shrink-0";
+      downloadBtn.innerText = "⌛";
+      downloadBtn.title = t("processing");
+    }
+    controls.appendChild(downloadBtn);
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "text-xs bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 px-3 py-2 rounded-lg text-white transition font-semibold shadow-lg flex-shrink-0";
+    delBtn.innerText = "🗑 " + t("delete");
+    delBtn.onclick = async () => {
+      if (!(await showConfirm(`${t("delete-confirm")} "${f.base}" ${t("delete-confirm2")}`, t('confirm-title')))) return;
+      const resp = await fetch(`/recordings/${encodeURIComponent(f.base)}`, { method: "DELETE" });
+      if (resp.ok) {
+        await refreshRecordingsList();
+        document.getElementById("status").innerText = `${t("deleted")} ${f.base}`;
+      } else {
+        const err = await resp.json().catch(()=>({ error: t("error") }));
+        document.getElementById("status").innerText = err.error || t("delete-error");
+      }
+    };
+    controls.appendChild(delBtn);
+
+    li.appendChild(left);
+    li.appendChild(controls);
+    list.appendChild(li);
+  });
+}
+
+async function refreshAll() {
+  await Promise.all([refreshList(), refreshRecordingsList()]);
+}
+
+// Live-Vorschau: Update video source während Aufzeichnung läuft
+async function updateLivePreview() {
+  try {
+    const res = await fetch('/recording/current');
+    const data = await res.json();
+    if (data && data.success) {
+      const preview = document.getElementById('preview');
+      const playlistUrl = data.playlistUrl || null;
+      const mp4Url = data.url || null;
+
+      if (playlistUrl) {
+        // Safari/nativ HLS support
+        if (preview.canPlayType && preview.canPlayType('application/vnd.apple.mpegurl')) {
+            if (preview.src !== playlistUrl) {
+              // destroy any existing hls.js instance
+              if (window._hls) { try { window._hls.destroy(); } catch(_){} window._hls = null; window._hlsUrl = null; }
+              preview.src = playlistUrl;
+            preview.load();
+          }
+        } else if (window.Hls && Hls.isSupported()) {
+          // use hls.js to play playlist in browsers that need it
+          if (!window._hls || window._hlsUrl !== playlistUrl) {
+            if (window._hls) { try { window._hls.destroy(); } catch(_){} window._hls = null; }
+            const hls = new Hls();
+            window._hls = hls;
+            window._hlsUrl = playlistUrl;
+            hls.attachMedia(preview);
+            hls.on(Hls.Events.MEDIA_ATTACHED, function() {
+                hls.loadSource(playlistUrl);
+            });
+          } else {
+            // refresh source to pick up new segments
+              try { window._hls.loadSource(playlistUrl); } catch(_){}
+          }
+        } else {
+          // no HLS support, fallback to MP4 if available
+          if (mp4Url && preview.src !== mp4Url) {
+            if (window._hls) { try { window._hls.destroy(); } catch(_){} window._hls = null; window._hlsUrl = null; }
+              preview.src = mp4Url;
+            preview.load();
+          }
+        }
+      } else if (mp4Url) {
+        // No playlist, use MP4
+        if (window._hls) { try { window._hls.destroy(); } catch(_){} window._hls = null; window._hlsUrl = null; }
+          if (preview.src !== mp4Url) {
+            preview.src = mp4Url;
+          preview.load();
+        }
+      }
+    }
+  } catch (err) {
+    // Fehler ignorieren, weitermachen
+  }
+}
+
+const RECORDINGS_POLL_INTERVAL = 10000;
+let recordingsPoll = setInterval(() => {
+  refreshRecordingsList().catch(()=>{});
+}, RECORDINGS_POLL_INTERVAL);
+
+const STATE_POLL_INTERVAL = 1000;
+let statePoll = setInterval(() => {
+  refreshList().catch(()=>{});
+}, STATE_POLL_INTERVAL);
+
+// Live-Vorschau: nur selten automatisch aktualisieren (keine ständigen Reloads)
+// Wir aktualisieren nur, wenn sich die Playlist-URL ändert. Interval hier ist konservativ.
+const LIVE_PREVIEW_INTERVAL = 15000; // 15s
+let livePreviewPoll = setInterval(() => {
+  updateLivePreview().catch(()=>{});
+}, LIVE_PREVIEW_INTERVAL);
+
+window.addEventListener('beforeunload', () => {
+  clearInterval(recordingsPoll);
+  clearInterval(statePoll);
+  clearInterval(livePreviewPoll);
+});
+
+refreshAll();
+</script>
+
+</body>
+</html>
+

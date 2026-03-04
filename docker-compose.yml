@@ -1,0 +1,11 @@
+version: "3.8"
+
+services:
+  recorder:
+    build: .
+    ports:
+      - "3002:3000"
+    volumes:
+      - ./recordings:/app/recordings
+    restart: unless-stopped
+
