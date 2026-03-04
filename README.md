@@ -1,5 +1,11 @@
 # Twitch Recorder 🎬
 
+[![GitHub Stars](https://img.shields.io/github/stars/atillatheboss/twitch-recorder?style=flat-square&logo=github&color=1f6feb)](https://github.com/atillatheboss/twitch-recorder)
+[![GitHub Watchers](https://img.shields.io/github/watchers/atillatheboss/twitch-recorder?style=flat-square&logo=github)](https://github.com/atillatheboss/twitch-recorder)
+[![GitHub Forks](https://img.shields.io/github/forks/atillatheboss/twitch-recorder?style=flat-square&logo=github)](https://github.com/atillatheboss/twitch-recorder)
+[![License](https://img.shields.io/github/license/atillatheboss/twitch-recorder?style=flat-square)](LICENSE)
+[![Repository Views](https://visitcount.itsvg.in/api?id=atillatheboss-twitch-recorder&icon=5&color=1f6feb)](https://github.com/atillatheboss/twitch-recorder)
+
 Record Twitch streams automatically with a modern web interface. Built with Node.js, FFmpeg, and Docker.
 
 **[Features](#-features) • [Requirements](#-requirements) • [Quick Start](#-quick-start-with-docker-(easiest)) • [Troubleshooting](#-troubleshooting)**
